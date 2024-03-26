@@ -1,0 +1,2 @@
+[all]
+server ansible_host=172.16.129.134 ansible_port=2223 ansible_user=root

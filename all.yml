@@ -1,0 +1,7 @@
+---
+- name: All server
+  hosts: all
+  roles:
+    - role: security
+      tags: security
+

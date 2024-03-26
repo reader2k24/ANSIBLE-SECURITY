@@ -1,0 +1,185 @@
+---
+- name: Настройка firewalld
+  become: true
+  block:
+    - name: Установка firewalld
+      ansible.builtin.package:
+        name: firewalld
+        state: present
+
+    - name: Включение firewalld
+      ansible.builtin.service:
+        name: firewalld
+        state: started
+        enabled: true
+
+    - name: Добавление портов и служб в firewalld
+      ansible.builtin.firewalld:
+        port: "{{ item.port | default(omit) }}"
+        service: "{{ item.service | default(omit) }}"
+        state: enabled
+        permanent: true
+      loop: "{{ rules }}"
+
+    - name: Настроика правил маскарадинга для исходящего трафика
+      ansible.builtin.firewalld:
+        masquerade: true
+        state: enabled
+        permanent: true
+
+    - name: Применить изменения конфигурации firewalld
+      ansible.builtin.command:
+        cmd: firewall-cmd --reload
+
+    - name: Сохранение временной конфигурации firewalld в постоянную
+      ansible.builtin.command:
+        cmd: firewall-cmd --runtime-to-permanent
+
+    - name: Перезагрузка firewalld
+      ansible.builtin.systemd:
+        name: firewalld
+        state: restarted
+
+- name: Настройка правил брандмауэра
+  become: true
+  block:
+    - name: Установка пакет iptables-persistent
+      ansible.builtin.apt:
+        name: iptables-persistent
+        state: present
+
+    - name: Блокировка порта 23 TCP с помощью iptables
+      ansible.builtin.iptables:
+        chain: INPUT
+        protocol: tcp
+        destination_port: 23
+        jump: DROP
+        state: present
+
+    - name: Разрешить входящие пакеты по SSH
+      ansible.builtin.iptables:
+        chain: INPUT
+        protocol: tcp
+        destination_port: 2223
+        jump: ACCEPT
+        state: present
+
+    - name: Разрешить входящие пакеты только с определенного IP-адреса
+      ansible.builtin.iptables:
+        chain: INPUT
+        source: "{{ item }}"
+        jump: ACCEPT
+        state: present
+      loop:
+        - "1.1.1.1"
+        - "2.2.2.1"
+        - "2.2.2.100"
+        - "172.28.14.252"
+        - "172.16.0.33"
+        - "172.16.0.42"
+        - "192.168.0.60"
+
+    - name: Заблокировать все остальные входящие пакеты
+      ansible.builtin.iptables:
+        chain: INPUT
+        jump: DROP
+        state: present
+
+    - name: Разрешить доступ к VPN-серверу только с определенных IP-адресов
+      ansible.builtin.iptables:
+        chain: INPUT
+        protocol: gre
+        source: "{{ item }}"
+        jump: ACCEPT
+        state: present
+      loop:
+        - "172.16.0.42"
+        - "192.168.0.60"
+
+    - name: Заблокировать доступ к VPN-серверу с остальных IP-адресов
+      ansible.builtin.iptables:
+        chain: INPUT
+        protocol: gre
+        jump: DROP
+        state: present
+
+    - name: Разрешить перенаправление пакетов между интерфейсами
+      ansible.builtin.iptables:
+        chain: FORWARD
+        jump: ACCEPT
+        state: present
+
+    - name: Настройка NAT для перенаправления трафика через VPN-сервер
+      ansible.builtin.iptables:
+        table: nat
+        chain: POSTROUTING
+        out_interface: gre1
+        jump: MASQUERADE
+        state: present
+
+    - name: Ограничить количество соединений от одного IP-адреса
+      ansible.builtin.shell:
+        cmd: "iptables -A INPUT -p tcp --syn -m connlimit --connlimit-above 5 -j REJECT"
+
+    - name: Установка ограничение на скорость соединений
+      ansible.builtin.iptables:
+        chain: INPUT
+        protocol: tcp
+        match: limit
+        limit: 1/s
+        jump: ACCEPT
+        state: present
+
+    - name: Отбросить все остальные пакеты с флагом SYN
+      ansible.builtin.shell:
+        cmd: "iptables -A INPUT -p tcp --tcp-flags SYN SYN -j DROP"
+
+    - name: Сохранение правил iptables в файл
+      ansible.builtin.shell:
+        cmd: iptables-save > /etc/iptables/rules.v4
+
+- name: Настройка сетевых правил
+  become: true
+  block:
+    - name: Настройка правила логирования TCP трафика с помощью firewalld
+      ansible.builtin.firewalld:
+        zone: public
+        rich_rule: 'rule family="ipv4" protocol value="tcp" log prefix="TCP_IN: " level="info"'
+        state: enabled
+
+    - name: Создание зоны для внутренних сетей
+      ansible.builtin.firewalld:
+        zone: internal_zone
+        state: present
+        permanent: true
+
+    - name: Назначение интерфейса для зоны внутренних сетей
+      ansible.builtin.firewalld:
+        zone: internal_zone
+        interface: ens33
+        state: enabled
+        permanent: true
+
+    - name: Добавление правил для доступа по SSH через интерфейс ens33 в зону internal_zone
+      ansible.builtin.command:
+        cmd: firewall-cmd --zone=internal_zone --add-port=2223/tcp --permanent
+
+    - name: Включение NAT для зоны внутренних сетей
+      ansible.builtin.firewalld:
+        permanent: true
+        state: enabled
+        zone: internal_zone
+        masquerade: true
+
+    - name: Применение изменений конфигурации firewalld
+      ansible.builtin.command:
+        cmd: firewall-cmd --reload
+
+    - name: Сохранение временной конфигурации firewalld в постоянную
+      ansible.builtin.command:
+        cmd: firewall-cmd --runtime-to-permanent
+
+    - name: Перезагрузка firewalld
+      ansible.builtin.service:
+        name: firewalld
+        state: restarted

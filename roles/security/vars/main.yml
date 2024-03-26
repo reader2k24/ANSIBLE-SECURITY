@@ -1,0 +1,16 @@
+rules:
+  - { port: 2223/tcp }
+  - { port: 80/tcp }
+  - { port: 443/tcp }
+  - { port: 5432/tcp }
+  - { port: 3306/tcp }
+  - { port: 6379/tcp }
+  - { port: 27017/tcp }
+  - { port: 8000/tcp }
+  - { port: 3000/tcp }
+  - { port: 4200/tcp }
+  - { port: 8080/tcp }
+  - { service: ntp }
+  - { service: ftp }
+  - { service: imap }
+  - { service: smtp }
