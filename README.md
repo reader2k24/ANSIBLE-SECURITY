@@ -29,7 +29,7 @@
   <li>Запустите плейбук с помощью следующей команды:</li>
 </ol>
 
-<pre><code>ansible-playbook -i inventory.ini playbook.yml
+<pre><code>ansible-playbook -i inventory all.yml
 </code></pre>
 
 <h2>Структура плейбука</h2>
